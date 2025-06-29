@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: FastAPI Backend",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/python-backend/start.py",
+            "python": "${workspaceFolder}/python-backend/.venv/bin/python",
+            "cwd": "${workspaceFolder}/python-backend",
+            "envFile": "${workspaceFolder}/python-backend/.env",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": []
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "python": "${workspaceFolder}/python-backend/.venv/bin/python",
+            "cwd": "${workspaceFolder}/python-backend",
+            "envFile": "${workspaceFolder}/python-backend/.env",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+} 

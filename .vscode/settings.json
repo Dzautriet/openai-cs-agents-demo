@@ -1,0 +1,32 @@
+{
+    "python.pythonPath": "./python-backend/.venv/bin/python",
+    "python.defaultInterpreterPath": "./python-backend/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.linting.mypyEnabled": true,
+    "python.linting.mypyPath": "./python-backend/.venv/bin/mypy",
+    "python.formatting.provider": "black",
+    "python.formatting.blackPath": "./python-backend/.venv/bin/black",
+    "python.sortImports.path": "./python-backend/.venv/bin/isort",
+    "python.analysis.extraPaths": [
+        "./python-backend"
+    ],
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.typeCheckingMode": "basic",
+    "files.associations": {
+        "*.py": "python"
+    },
+    "python.envFile": "${workspaceFolder}/python-backend/.env",
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true
+    }
+} 
