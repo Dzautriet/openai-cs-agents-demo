@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -5,6 +6,10 @@ from typing import Optional, List, Dict, Any
 from uuid import uuid4
 import time
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from main import (
     triage_agent,
@@ -33,9 +38,10 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # CORS configuration (adjust as needed for deployment)
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[origin.strip() for origin in allowed_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

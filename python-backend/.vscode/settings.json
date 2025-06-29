@@ -1,0 +1,10 @@
+{
+    "python.pythonPath": "./.venv/bin/python",
+    "python.defaultInterpreterPath": "./.venv/bin/python",
+    "python.analysis.extraPaths": [
+        "."
+    ],
+    "python.analysis.autoSearchPaths": true,
+    "python.terminal.activateEnvironment": true,
+    "python.envFile": "${workspaceFolder}/.env"
+} 
