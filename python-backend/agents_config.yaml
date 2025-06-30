@@ -1,0 +1,73 @@
+agents:
+  triage_agent:
+    name: "Triage Agent"
+    model: "gpt-4.1"
+    handoff_description: "A triage agent that can delegate a customer's request to the appropriate agent."
+    instructions_function: "triage_instructions"
+    handoffs:
+      - agent: "flight_status_agent"
+      - agent: "cancellation_agent"
+        on_handoff: "on_cancellation_handoff"
+      - agent: "faq_agent"
+      - agent: "seat_booking_agent"
+        on_handoff: "on_seat_booking_handoff"
+    tools: []
+    input_guardrails:
+      - "relevance_guardrail"
+      - "jailbreak_guardrail"
+
+  seat_booking_agent:
+    name: "Seat Booking Agent"
+    model: "gpt-4.1"
+    handoff_description: "A helpful agent that can update a seat on a flight."
+    instructions_function: "seat_booking_instructions"
+    handoffs:
+      - agent: "triage_agent"
+    tools:
+      - "update_seat"
+      - "display_seat_map"
+    input_guardrails:
+      - "relevance_guardrail"
+      - "jailbreak_guardrail"
+
+  flight_status_agent:
+    name: "Flight Status Agent"
+    model: "gpt-4.1"
+    handoff_description: "An agent to provide flight status information."
+    instructions_function: "flight_status_instructions"
+    handoffs:
+      - agent: "triage_agent"
+    tools:
+      - "flight_status_tool"
+    input_guardrails:
+      - "relevance_guardrail"
+      - "jailbreak_guardrail"
+
+  cancellation_agent:
+    name: "Cancellation Agent"
+    model: "gpt-4.1"
+    handoff_description: "An agent to cancel flights."
+    instructions_function: "cancellation_instructions"
+    handoffs:
+      - agent: "triage_agent"
+    tools:
+      - "cancel_flight"
+    input_guardrails:
+      - "relevance_guardrail"
+      - "jailbreak_guardrail"
+
+  faq_agent:
+    name: "FAQ Agent"
+    model: "gpt-4.1"
+    handoff_description: "A helpful agent that can answer questions about the airline."
+    instructions_function: "faq_instructions"
+    handoffs:
+      - agent: "triage_agent"
+    tools:
+      - "faq_lookup_tool"
+    input_guardrails:
+      - "relevance_guardrail"
+      - "jailbreak_guardrail"
+
+# Configuration for default/entry agent
+default_agent: "triage_agent" 

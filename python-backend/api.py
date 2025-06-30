@@ -12,12 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from main import (
-    triage_agent,
-    faq_agent,
-    seat_booking_agent,
-    flight_status_agent,
-    cancellation_agent,
+    factory,
     create_initial_context,
+    get_default_agent_name,
 )
 
 from agents import (
@@ -113,14 +110,11 @@ conversation_store = InMemoryConversationStore()
 
 def _get_agent_by_name(name: str):
     """Return the agent object by name."""
-    agents = {
-        triage_agent.name: triage_agent,
-        faq_agent.name: faq_agent,
-        seat_booking_agent.name: seat_booking_agent,
-        flight_status_agent.name: flight_status_agent,
-        cancellation_agent.name: cancellation_agent,
-    }
-    return agents.get(name, triage_agent)
+    try:
+        return factory.get_agent_by_name(name)
+    except ValueError:
+        # Fall back to default agent if not found
+        return factory.get_default_agent()
 
 def _get_guardrail_name(g) -> str:
     """Extract a friendly guardrail name."""
@@ -137,21 +131,7 @@ def _get_guardrail_name(g) -> str:
 
 def _build_agents_list() -> List[Dict[str, Any]]:
     """Build a list of all available agents and their metadata."""
-    def make_agent_dict(agent):
-        return {
-            "name": agent.name,
-            "description": getattr(agent, "handoff_description", ""),
-            "handoffs": [getattr(h, "agent_name", getattr(h, "name", "")) for h in getattr(agent, "handoffs", [])],
-            "tools": [getattr(t, "name", getattr(t, "__name__", "")) for t in getattr(agent, "tools", [])],
-            "input_guardrails": [_get_guardrail_name(g) for g in getattr(agent, "input_guardrails", [])],
-        }
-    return [
-        make_agent_dict(triage_agent),
-        make_agent_dict(faq_agent),
-        make_agent_dict(seat_booking_agent),
-        make_agent_dict(flight_status_agent),
-        make_agent_dict(cancellation_agent),
-    ]
+    return factory.list_agents()
 
 # =========================
 # Main Chat Endpoint
@@ -168,7 +148,7 @@ async def chat_endpoint(req: ChatRequest):
     if is_new:
         conversation_id: str = uuid4().hex
         ctx = create_initial_context()
-        current_agent_name = triage_agent.name
+        current_agent_name = get_default_agent_name()
         state: Dict[str, Any] = {
             "input_items": [],
             "context": ctx,
