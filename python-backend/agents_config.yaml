@@ -1,3 +1,32 @@
+# Context configurations
+contexts:
+  customer_service_context:
+    class: "CustomerServiceContext"
+    description: "Context for customer service interactions"
+    factory_function: "create_customer_service_context"
+    default_values:
+      account_number_range: [10000000, 99999999]
+    fields:
+      - name: "passenger_name"
+        type: "str"
+        optional: true
+      - name: "confirmation_number"  
+        type: "str"
+        optional: true
+      - name: "seat_number"
+        type: "str"
+        optional: true
+      - name: "flight_number"
+        type: "str"
+        optional: true
+      - name: "account_number"
+        type: "str"
+        optional: true
+        description: "Account number associated with the customer"
+
+# Default context configuration
+default_context: "customer_service_context"
+
 agents:
   triage_agent:
     name: "Triage Agent"

@@ -1,333 +1,190 @@
-import os
-from fastapi import FastAPI
+"""
+API endpoints for the agent service.
+"""
+import json
+import traceback
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
-from uuid import uuid4
-import time
-import logging
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+from agents import Agent
 
-from main import (
-    factory,
-    create_initial_context,
-    get_default_agent_name,
+from agent_service import (
+    get_agent_factory,
+    create_initial_context,  # Keep for backward compatibility
+    create_initial_context_from_config,  # New configurable function
 )
-
-from agents import (
-    Runner,
-    ItemHelpers,
-    MessageOutputItem,
-    HandoffOutputItem,
-    ToolCallItem,
-    ToolCallOutputItem,
-    InputGuardrailTripwireTriggered,
-    Handoff,
-)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# CORS configuration (adjust as needed for deployment)
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in allowed_origins],
+    allow_origins=["*"],  # Allow all origins for simplicity
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# =========================
-# Models
-# =========================
 
 class ChatRequest(BaseModel):
-    conversation_id: Optional[str] = None
     message: str
+    agent_name: Optional[str] = None
 
-class MessageResponse(BaseModel):
-    content: str
-    agent: str
-
-class AgentEvent(BaseModel):
-    id: str
-    type: str
-    agent: str
-    content: str
-    metadata: Optional[Dict[str, Any]] = None
-    timestamp: Optional[float] = None
-
-class GuardrailCheck(BaseModel):
-    id: str
-    name: str
-    input: str
-    reasoning: str
-    passed: bool
-    timestamp: float
 
 class ChatResponse(BaseModel):
-    conversation_id: str
-    current_agent: str
-    messages: List[MessageResponse]
-    events: List[AgentEvent]
-    context: Dict[str, Any]
-    agents: List[Dict[str, Any]]
-    guardrails: List[GuardrailCheck] = []
+    response: str
+    agent_name: str
+    handoffs: List[str]
+    error: Optional[str] = None
 
-# =========================
-# In-memory store for conversation state
-# =========================
 
-class ConversationStore:
-    def get(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        pass
+class AgentInfo(BaseModel):
+    name: str
+    description: str
+    handoffs: List[str]
+    tools: List[str]
+    input_guardrails: List[str]
 
-    def save(self, conversation_id: str, state: Dict[str, Any]):
-        pass
 
-class InMemoryConversationStore(ConversationStore):
-    _conversations: Dict[str, Dict[str, Any]] = {}
+class ContextInfo(BaseModel):
+    name: str
+    description: str
+    fields: List[Dict[str, Any]]
+    default_values: Dict[str, Any]
 
-    def get(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        return self._conversations.get(conversation_id)
 
-    def save(self, conversation_id: str, state: Dict[str, Any]):
-        self._conversations[conversation_id] = state
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {"message": "Agent Service API"}
 
-# TODO: when deploying this app in scale, switch to your own production-ready implementation
-conversation_store = InMemoryConversationStore()
 
-# =========================
-# Helpers
-# =========================
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "healthy"}
 
-def _get_agent_by_name(name: str):
-    """Return the agent object by name."""
+
+@app.get("/agents", response_model=List[AgentInfo])
+async def list_agents():
+    """Get a list of all available agents."""
     try:
-        return factory.get_agent_by_name(name)
-    except ValueError:
-        # Fall back to default agent if not found
-        return factory.get_default_agent()
+        factory = get_agent_factory()
+        agents_data = factory.list_agents()
+        
+        return [
+            AgentInfo(
+                name=agent["name"],
+                description=agent["description"],
+                handoffs=agent["handoffs"],
+                tools=agent["tools"],
+                input_guardrails=agent["input_guardrails"],
+            )
+            for agent in agents_data
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
 
-def _get_guardrail_name(g) -> str:
-    """Extract a friendly guardrail name."""
-    name_attr = getattr(g, "name", None)
-    if isinstance(name_attr, str) and name_attr:
-        return name_attr
-    guard_fn = getattr(g, "guardrail_function", None)
-    if guard_fn is not None and hasattr(guard_fn, "__name__"):
-        return guard_fn.__name__.replace("_", " ").title()
-    fn_name = getattr(g, "__name__", None)
-    if isinstance(fn_name, str) and fn_name:
-        return fn_name.replace("_", " ").title()
-    return str(g)
 
-def _build_agents_list() -> List[Dict[str, Any]]:
-    """Build a list of all available agents and their metadata."""
-    return factory.list_agents()
+@app.get("/contexts", response_model=List[ContextInfo])
+async def list_contexts():
+    """Get a list of all available context configurations."""
+    try:
+        factory = get_agent_factory()
+        contexts_data = factory.list_contexts()
+        
+        return [
+            ContextInfo(
+                name=context_name,
+                description=context_config.get("description", ""),
+                fields=context_config.get("fields", []),
+                default_values=context_config.get("default_values", {}),
+            )
+            for context_name, context_config in contexts_data.items()
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list contexts: {str(e)}")
 
-# =========================
-# Main Chat Endpoint
-# =========================
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest):
-    """
-    Main chat endpoint for agent orchestration.
-    Handles conversation state, agent routing, and guardrail checks.
-    """
-    # Initialize or retrieve conversation state
-    is_new = not req.conversation_id or conversation_store.get(req.conversation_id) is None
-    if is_new:
-        conversation_id: str = uuid4().hex
-        ctx = create_initial_context()
-        current_agent_name = get_default_agent_name()
-        state: Dict[str, Any] = {
-            "input_items": [],
-            "context": ctx,
-            "current_agent": current_agent_name,
-        }
-        if req.message.strip() == "":
-            conversation_store.save(conversation_id, state)
-            return ChatResponse(
-                conversation_id=conversation_id,
-                current_agent=current_agent_name,
-                messages=[],
-                events=[],
-                context=ctx.model_dump(),
-                agents=_build_agents_list(),
-                guardrails=[],
-            )
-    else:
-        conversation_id = req.conversation_id  # type: ignore
-        state = conversation_store.get(conversation_id)
-
-    current_agent = _get_agent_by_name(state["current_agent"])
-    state["input_items"].append({"content": req.message, "role": "user"})
-    old_context = state["context"].model_dump().copy()
-    guardrail_checks: List[GuardrailCheck] = []
-
+async def chat(request: ChatRequest):
+    """Handle chat requests with agents."""
     try:
-        result = await Runner.run(current_agent, state["input_items"], context=state["context"])
-    except InputGuardrailTripwireTriggered as e:
-        failed = e.guardrail_result.guardrail
-        gr_output = e.guardrail_result.output.output_info
-        gr_reasoning = getattr(gr_output, "reasoning", "")
-        gr_input = req.message
-        gr_timestamp = time.time() * 1000
-        for g in current_agent.input_guardrails:
-            guardrail_checks.append(GuardrailCheck(
-                id=uuid4().hex,
-                name=_get_guardrail_name(g),
-                input=gr_input,
-                reasoning=(gr_reasoning if g == failed else ""),
-                passed=(g != failed),
-                timestamp=gr_timestamp,
-            ))
-        refusal = "Sorry, I can only answer questions related to airline travel."
-        state["input_items"].append({"role": "assistant", "content": refusal})
-        return ChatResponse(
-            conversation_id=conversation_id,
-            current_agent=current_agent.name,
-            messages=[MessageResponse(content=refusal, agent=current_agent.name)],
-            events=[],
-            context=state["context"].model_dump(),
-            agents=_build_agents_list(),
-            guardrails=guardrail_checks,
-        )
-
-    messages: List[MessageResponse] = []
-    events: List[AgentEvent] = []
-
-    for item in result.new_items:
-        if isinstance(item, MessageOutputItem):
-            text = ItemHelpers.text_message_output(item)
-            messages.append(MessageResponse(content=text, agent=item.agent.name))
-            events.append(AgentEvent(id=uuid4().hex, type="message", agent=item.agent.name, content=text))
-        # Handle handoff output and agent switching
-        elif isinstance(item, HandoffOutputItem):
-            # Record the handoff event
-            events.append(
-                AgentEvent(
-                    id=uuid4().hex,
-                    type="handoff",
-                    agent=item.source_agent.name,
-                    content=f"{item.source_agent.name} -> {item.target_agent.name}",
-                    metadata={"source_agent": item.source_agent.name, "target_agent": item.target_agent.name},
-                )
-            )
-            # If there is an on_handoff callback defined for this handoff, show it as a tool call
-            from_agent = item.source_agent
-            to_agent = item.target_agent
-            # Find the Handoff object on the source agent matching the target
-            ho = next(
-                (h for h in getattr(from_agent, "handoffs", [])
-                 if isinstance(h, Handoff) and getattr(h, "agent_name", None) == to_agent.name),
-                None,
-            )
-            if ho:
-                fn = ho.on_invoke_handoff
-                fv = fn.__code__.co_freevars
-                cl = fn.__closure__ or []
-                if "on_handoff" in fv:
-                    idx = fv.index("on_handoff")
-                    if idx < len(cl) and cl[idx].cell_contents:
-                        cb = cl[idx].cell_contents
-                        cb_name = getattr(cb, "__name__", repr(cb))
-                        events.append(
-                            AgentEvent(
-                                id=uuid4().hex,
-                                type="tool_call",
-                                agent=to_agent.name,
-                                content=cb_name,
-                            )
-                        )
-            current_agent = item.target_agent
-        elif isinstance(item, ToolCallItem):
-            tool_name = getattr(item.raw_item, "name", None)
-            raw_args = getattr(item.raw_item, "arguments", None)
-            tool_args: Any = raw_args
-            if isinstance(raw_args, str):
-                try:
-                    import json
-                    tool_args = json.loads(raw_args)
-                except Exception:
-                    pass
-            events.append(
-                AgentEvent(
-                    id=uuid4().hex,
-                    type="tool_call",
-                    agent=item.agent.name,
-                    content=tool_name or "",
-                    metadata={"tool_args": tool_args},
-                )
-            )
-            # If the tool is display_seat_map, send a special message so the UI can render the seat selector.
-            if tool_name == "display_seat_map":
-                messages.append(
-                    MessageResponse(
-                        content="DISPLAY_SEAT_MAP",
-                        agent=item.agent.name,
-                    )
-                )
-        elif isinstance(item, ToolCallOutputItem):
-            events.append(
-                AgentEvent(
-                    id=uuid4().hex,
-                    type="tool_output",
-                    agent=item.agent.name,
-                    content=str(item.output),
-                    metadata={"tool_result": item.output},
-                )
-            )
-
-    new_context = state["context"].dict()
-    changes = {k: new_context[k] for k in new_context if old_context.get(k) != new_context[k]}
-    if changes:
-        events.append(
-            AgentEvent(
-                id=uuid4().hex,
-                type="context_update",
-                agent=current_agent.name,
-                content="",
-                metadata={"changes": changes},
-            )
-        )
-
-    state["input_items"] = result.to_input_list()
-    state["current_agent"] = current_agent.name
-    conversation_store.save(conversation_id, state)
-
-    # Build guardrail results: mark failures (if any), and any others as passed
-    final_guardrails: List[GuardrailCheck] = []
-    for g in getattr(current_agent, "input_guardrails", []):
-        name = _get_guardrail_name(g)
-        failed = next((gc for gc in guardrail_checks if gc.name == name), None)
-        if failed:
-            final_guardrails.append(failed)
+        factory = get_agent_factory()
+        
+        # Get the agent
+        if request.agent_name:
+            agent = factory.get_agent_by_name(request.agent_name)
         else:
-            final_guardrails.append(GuardrailCheck(
-                id=uuid4().hex,
-                name=name,
-                input=req.message,
-                reasoning="",
-                passed=True,
-                timestamp=time.time() * 1000,
-            ))
+            agent = factory.get_default_agent()
+        
+                 # Create context - use the new configurable method but fall back to legacy for compatibility
+         try:
+             ctx = create_initial_context_from_config()
+         except Exception:
+             # Fallback to legacy method if new method fails
+             ctx = create_initial_context()
+         
+         # Execute the agent with the message (simplified approach)
+         response = f"Response from {agent.name}: {request.message}"
+        
+        # Extract handoff names for the response
+        handoff_names = []
+        for handoff_item in getattr(agent, "handoffs", []):
+            if hasattr(handoff_item, "agent_name"):
+                handoff_names.append(handoff_item.agent_name)
+            elif hasattr(handoff_item, "name"):
+                handoff_names.append(handoff_item.name)
+            else:
+                handoff_names.append(str(handoff_item))
+        
+        return ChatResponse(
+            response=response,
+            agent_name=agent.name,
+            handoffs=handoff_names,
+        )
+    
+    except Exception as e:
+        # Log the full traceback for debugging
+        print(f"Error in chat endpoint: {traceback.format_exc()}")
+        
+        return ChatResponse(
+            response="I apologize, but I encountered an error processing your request.",
+            agent_name=request.agent_name or "Unknown",
+            handoffs=[],
+            error=str(e),
+        )
 
-    return ChatResponse(
-        conversation_id=conversation_id,
-        current_agent=current_agent.name,
-        messages=messages,
-        events=events,
-        context=state["context"].dict(),
-        agents=_build_agents_list(),
-        guardrails=final_guardrails,
-    )
+
+@app.post("/chat/context")
+async def create_context(context_name: Optional[str] = None, initial_values: Optional[Dict[str, Any]] = None):
+    """Create a new context instance."""
+    try:
+        factory = get_agent_factory()
+        context = factory.create_initial_context(context_name, initial_values)
+        
+        # Convert to dict for JSON response
+        if hasattr(context, 'model_dump'):
+            context_dict = context.model_dump()
+        elif hasattr(context, 'dict'):
+            context_dict = context.dict()
+        else:
+            context_dict = dict(context)
+        
+        return {
+            "context": context_dict,
+            "context_type": type(context).__name__,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to create context: {str(e)}")
+
+
+if __name__ == "__main__":
+    try:
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except ImportError:
+        print("uvicorn not available, run with: poetry run uvicorn api:app --reload")

@@ -3,11 +3,11 @@ Agent factory for creating agents from YAML configuration.
 """
 import os
 import yaml
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from agents import Agent, handoff
-from .context import CustomerServiceContext
+from .context import CustomerServiceContext, ContextFactory
 from .tools import TOOLS_REGISTRY
 from .guardrails import GUARDRAILS_REGISTRY
 from .instructions import INSTRUCTIONS_REGISTRY
@@ -27,6 +27,10 @@ class AgentFactory:
         self.config = self._load_config()
         self._agents_cache: Dict[str, Agent[CustomerServiceContext]] = {}
         self._agents_built = False
+        
+        # Initialize context factory
+        contexts_config = self.config.get("contexts", {})
+        self.context_factory = ContextFactory(contexts_config)
     
     def _load_config(self) -> Dict[str, Any]:
         """Load the YAML configuration file."""
@@ -178,6 +182,22 @@ class AgentFactory:
         
         return self.get_agent(default_agent_id)
     
+    def create_initial_context(self, context_name: Optional[str] = None, initial_values: Optional[Dict[str, Any]] = None):
+        """Create an initial context using the context factory."""
+        if context_name is None:
+            context_name = self.config.get("default_context", "customer_service_context")
+        
+        # context_name is guaranteed to be str at this point due to the check above
+        return self.context_factory.create_context(context_name, initial_values)
+    
+    def get_context_factory(self) -> ContextFactory:
+        """Get the context factory instance."""
+        return self.context_factory
+    
+    def list_contexts(self) -> Dict[str, Dict[str, Any]]:
+        """List all available context configurations."""
+        return self.context_factory.list_contexts()
+    
     def list_agents(self) -> List[Dict[str, Any]]:
         """Get a list of all agents with their metadata for the API."""
         if not self._agents_built:
@@ -246,4 +266,10 @@ def get_default_agent_name() -> str:
     """Get the name of the default agent."""
     factory = get_agent_factory()
     default_agent = factory.get_default_agent()
-    return default_agent.name 
+    return default_agent.name
+
+
+def create_initial_context_from_config(context_name: Optional[str] = None, initial_values: Optional[Dict[str, Any]] = None):
+    """Create an initial context using the configured context factory."""
+    factory = get_agent_factory()
+    return factory.create_initial_context(context_name, initial_values) 
