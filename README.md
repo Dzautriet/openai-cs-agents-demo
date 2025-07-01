@@ -13,6 +13,27 @@ It is composed of two parts:
 
 ![Demo Screenshot](screenshot.jpg)
 
+## Roadmap
+
+### Backend
+- Refactor context management
+- Guardrail agent
+- Anthropic and other models
+- Add more tools
+  - Web search
+  - File operation
+  - Slides generation
+  - Image generation 
+- ~~Automatic tool discovery~~
+- ~~Add agent without editing code~~
+
+### Frontend
+- Support editing, re-running, streamed display
+- Support file upload
+- Support file/image output
+- Support tool visualization and potentially configuration
+- Chat history and room
+
 ## How to use
 
 ### Setting your OpenAI API key
