@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AgentPanel } from "@/components/agent-panel";
 import { Chat } from "@/components/chat";
 import type { Agent, AgentEvent, GuardrailCheck, Message } from "@/lib/types";
-import { callChatAPI } from "@/lib/api";
+import { callChatAPI, rerunFromMessageAPI } from "@/lib/api";
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -87,6 +87,61 @@ export default function Home() {
     setIsLoading(false);
   };
 
+  // Edit a user message and re-run from that point
+  const handleEditMessage = async (messageIndex: number, newContent: string) => {
+    if (!conversationId) return;
+    
+    // Calculate the user message index (count only user messages before this index)
+    let userMessageIndex = 0;
+    for (let i = 0; i < messageIndex; i++) {
+      if (messages[i].role === "user") {
+        userMessageIndex++;
+      }
+    }
+    
+    setIsLoading(true);
+    
+    const data = await rerunFromMessageAPI(conversationId, userMessageIndex, newContent);
+    
+    if (data) {
+      setCurrentAgent(data.current_agent);
+      setContext(data.context);
+      if (data.events) {
+        const stamped = data.events.map((e: any) => ({
+          ...e,
+          timestamp: e.timestamp ?? Date.now(),
+        }));
+        setEvents(stamped);
+      }
+      if (data.agents) setAgents(data.agents);
+      if (data.guardrails) setGuardrails(data.guardrails);
+
+      // Replace messages from the edit point onward
+      const messagesUpToEdit = messages.slice(0, messageIndex);
+      const editedUserMessage: Message = {
+        ...messages[messageIndex],
+        content: newContent,
+      };
+      
+      const newMessages = [editedUserMessage];
+      if (data.messages) {
+        const responses: Message[] = data.messages.map((m: any) => ({
+          id: Date.now().toString() + Math.random().toString(),
+          content: m.content,
+          role: "assistant",
+          agent: m.agent,
+          timestamp: new Date(),
+        }));
+        newMessages.push(...responses);
+      }
+      
+      setMessages([...messagesUpToEdit, ...newMessages]);
+    }
+    
+    setIsLoading(false);
+  };
+
+
   return (
     <main className="flex h-screen gap-2 bg-gray-100 p-2">
       <AgentPanel
@@ -99,6 +154,7 @@ export default function Home() {
       <Chat
         messages={messages}
         onSendMessage={handleSendMessage}
+        onEditMessage={handleEditMessage}
         isLoading={isLoading}
       />
     </main>

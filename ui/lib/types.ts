@@ -4,6 +4,9 @@ export interface Message {
   role: "user" | "assistant"
   agent?: string
   timestamp: Date
+  isEditing?: boolean
+  canEdit?: boolean
+  canRegenerate?: boolean
 }
 
 export interface Agent {

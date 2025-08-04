@@ -118,9 +118,10 @@ Four main registries provide loose coupling:
   - File operation tools for document handling and processing
   - Presentation generation tools for creating slides and visual content
   - Image generation integration for visual responses
+  - Support MCP (Multi-Model Protocol)
 
 ### Planned Frontend Improvements
-- **Interactive Conversation Management**: Enable editing, re-running, and real-time streaming of agent responses
+- **Interactive Conversation Management**: Enable editing, re-running, cancelling, and real-time streaming of agent responses
 - **Rich Media Support**: 
   - File upload functionality for customers to share documents
   - Display capabilities for files, images, and generated content

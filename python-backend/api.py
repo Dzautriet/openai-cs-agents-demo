@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -51,6 +51,8 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     message: str
+    # For editing/rerunning: truncate conversation at this user message index and replace with new message
+    rerun_from_message_index: Optional[int] = None
 
 class MessageResponse(BaseModel):
     content: str
@@ -143,8 +145,42 @@ async def chat_endpoint(req: ChatRequest):
     Main chat endpoint for agent orchestration.
     Handles conversation state, agent routing, and guardrail checks.
     """
-    # Initialize or retrieve conversation state
-    is_new = not req.conversation_id or conversation_store.get(req.conversation_id) is None
+    # Handle rerun logic first if specified
+    if req.rerun_from_message_index is not None:
+        if not req.conversation_id:
+            raise HTTPException(status_code=400, detail="Conversation ID required for rerun")
+        
+        state = conversation_store.get(req.conversation_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        
+        # Find the user message at the given index
+        user_messages = [item for item in state["input_items"] if item.get("role") == "user"]
+        
+        if req.rerun_from_message_index >= len(user_messages):
+            raise HTTPException(status_code=400, detail="Message index out of range")
+        
+        # Find the actual index in input_items for this user message
+        user_count = 0
+        truncate_index = 0
+        for i, item in enumerate(state["input_items"]):
+            if item.get("role") == "user":
+                if user_count == req.rerun_from_message_index:
+                    truncate_index = i
+                    break
+                user_count += 1
+        
+        # Truncate the conversation at this point (before the user message)
+        state["input_items"] = state["input_items"][:truncate_index]
+        conversation_store.save(req.conversation_id, state)
+        
+        # Continue with normal flow using the provided message
+        conversation_id = req.conversation_id
+        is_new = False
+    else:
+        # Initialize or retrieve conversation state
+        is_new = not req.conversation_id or conversation_store.get(req.conversation_id) is None
+    
     if is_new:
         conversation_id: str = uuid4().hex
         ctx = create_initial_context()
@@ -167,7 +203,10 @@ async def chat_endpoint(req: ChatRequest):
             )
     else:
         conversation_id = req.conversation_id  # type: ignore
-        state = conversation_store.get(conversation_id)
+        if req.rerun_from_message_index is None:
+            state = conversation_store.get(conversation_id)
+            if not state:
+                raise HTTPException(status_code=404, detail="Conversation not found")
 
     current_agent = _get_agent_by_name(state["current_agent"])
     state["input_items"].append({"content": req.message, "role": "user"})
@@ -331,3 +370,4 @@ async def chat_endpoint(req: ChatRequest):
         agents=_build_agents_list(),
         guardrails=final_guardrails,
     )
+

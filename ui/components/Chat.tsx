@@ -8,16 +8,19 @@ import { SeatMap } from "./seat-map";
 interface ChatProps {
   messages: Message[];
   onSendMessage: (message: string) => void;
+  onEditMessage: (messageIndex: number, newContent: string) => void;
   /** Whether waiting for assistant response */
   isLoading?: boolean;
 }
 
-export function Chat({ messages, onSendMessage, isLoading }: ChatProps) {
+export function Chat({ messages, onSendMessage, onEditMessage, isLoading }: ChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputText, setInputText] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const [showSeatMap, setShowSeatMap] = useState(false);
   const [selectedSeat, setSelectedSeat] = useState<string | undefined>(undefined);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   // Auto-scroll to bottom when messages or loading indicator change
   useEffect(() => {
@@ -60,6 +63,37 @@ export function Chat({ messages, onSendMessage, isLoading }: ChatProps) {
     [handleSend, isComposing]
   );
 
+  const handleEditStart = useCallback((messageIndex: number, currentContent: string) => {
+    setEditingMessageIndex(messageIndex);
+    setEditingText(currentContent);
+  }, []);
+
+  const handleEditCancel = useCallback(() => {
+    setEditingMessageIndex(null);
+    setEditingText("");
+  }, []);
+
+  const handleEditSend = useCallback(() => {
+    if (editingMessageIndex !== null && editingText.trim()) {
+      onEditMessage(editingMessageIndex, editingText);
+      setEditingMessageIndex(null);
+      setEditingText("");
+    }
+  }, [editingMessageIndex, editingText, onEditMessage]);
+
+  const handleEditKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleEditSend();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleEditCancel();
+      }
+    },
+    [handleEditSend, handleEditCancel]
+  );
+
   return (
     <div className="flex flex-col h-full flex-1 bg-white shadow-sm border border-gray-200 border-t-0 rounded-xl">
       <div className="bg-blue-600 text-white h-12 px-4 flex items-center rounded-t-xl">
@@ -71,21 +105,67 @@ export function Chat({ messages, onSendMessage, isLoading }: ChatProps) {
       <div className="flex-1 overflow-y-auto min-h-0 md:px-4 pt-4 pb-20">
         {messages.map((msg, idx) => {
           if (msg.content === "DISPLAY_SEAT_MAP") return null; // Skip rendering marker message
+          
+          const isEditing = editingMessageIndex === idx;
+          const isUserMessage = msg.role === "user";
+          const canEdit = isUserMessage;
+          
           return (
             <div
               key={idx}
-              className={`flex mb-5 text-sm ${msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
+              className={`group flex mb-5 text-sm ${isUserMessage ? "justify-end" : "justify-start"}`}
             >
-              {msg.role === "user" ? (
-                <div className="ml-4 rounded-[16px] rounded-br-[4px] px-4 py-2 md:ml-24 bg-black text-white font-light max-w-[80%]">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
-              ) : (
-                <div className="mr-4 rounded-[16px] rounded-bl-[4px] px-4 py-2 md:mr-24 text-zinc-900 bg-[#ECECF1] font-light max-w-[80%]">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
-              )}
+              <div className={`relative ${isUserMessage ? "ml-4 md:ml-24" : "mr-4 md:mr-24"} max-w-[80%]`}>
+                {isEditing ? (
+                  <div className="rounded-[16px] px-4 py-2 bg-white border-2 border-blue-300">
+                    <textarea
+                      value={editingText}
+                      onChange={(e) => setEditingText(e.target.value)}
+                      onKeyDown={handleEditKeyDown}
+                      className="w-full resize-none border-0 focus:outline-none text-sm bg-transparent"
+                      rows={3}
+                      autoFocus
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={handleEditSend}
+                        className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-1"
+                      >
+                        Send ↗
+                      </button>
+                      <button
+                        onClick={handleEditCancel}
+                        className="px-3 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className={`rounded-[16px] px-4 py-2 font-light ${
+                      isUserMessage 
+                        ? "rounded-br-[4px] bg-black text-white" 
+                        : "rounded-bl-[4px] text-zinc-900 bg-[#ECECF1]"
+                    }`}>
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                    
+                    {/* Action buttons */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 absolute -top-2 -right-2 flex gap-1">
+                      {canEdit && (
+                        <button
+                          onClick={() => handleEditStart(idx, msg.content)}
+                          className="p-1 bg-blue-500 text-white rounded-full text-xs hover:bg-blue-600 transition-colors"
+                          title="Edit and resend message"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
