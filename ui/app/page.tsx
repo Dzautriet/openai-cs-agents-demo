@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AgentPanel } from "@/components/agent-panel";
-import { Chat } from "@/components/chat";
+import { Chat } from "@/components/Chat";
 import type { Agent, AgentEvent, GuardrailCheck, Message } from "@/lib/types";
 import { callChatAPI, rerunFromMessageAPI } from "@/lib/api";
 
@@ -141,6 +141,68 @@ export default function Home() {
     setIsLoading(false);
   };
 
+  // Regenerate an assistant message by re-running from the previous user message
+  const handleRegenerateMessage = async (messageIndex: number) => {
+    if (!conversationId) return;
+    
+    // Find the last user message before this assistant message
+    let lastUserMessageIndex = -1;
+    let userMessageCount = 0;
+    
+    for (let i = messageIndex - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserMessageIndex = i;
+        break;
+      }
+    }
+    
+    if (lastUserMessageIndex === -1) return; // No user message found
+    
+    // Calculate the user message index for the API
+    for (let i = 0; i < lastUserMessageIndex; i++) {
+      if (messages[i].role === "user") {
+        userMessageCount++;
+      }
+    }
+    
+    setIsLoading(true);
+    
+    const data = await rerunFromMessageAPI(conversationId, userMessageCount, messages[lastUserMessageIndex].content);
+    
+    if (data) {
+      setCurrentAgent(data.current_agent);
+      setContext(data.context);
+      if (data.events) {
+        const stamped = data.events.map((e: any) => ({
+          ...e,
+          timestamp: e.timestamp ?? Date.now(),
+        }));
+        setEvents(stamped);
+      }
+      if (data.agents) setAgents(data.agents);
+      if (data.guardrails) setGuardrails(data.guardrails);
+
+      // Replace messages from the user message onward
+      const messagesUpToUser = messages.slice(0, lastUserMessageIndex + 1);
+      
+      const newMessages: Message[] = [];
+      if (data.messages) {
+        const responses: Message[] = data.messages.map((m: any) => ({
+          id: Date.now().toString() + Math.random().toString(),
+          content: m.content,
+          role: "assistant",
+          agent: m.agent,
+          timestamp: new Date(),
+        }));
+        newMessages.push(...responses);
+      }
+      
+      setMessages([...messagesUpToUser, ...newMessages]);
+    }
+    
+    setIsLoading(false);
+  };
+
 
   return (
     <main className="flex h-screen gap-2 bg-gray-100 p-2">
@@ -155,6 +217,7 @@ export default function Home() {
         messages={messages}
         onSendMessage={handleSendMessage}
         onEditMessage={handleEditMessage}
+        onRegenerateMessage={handleRegenerateMessage}
         isLoading={isLoading}
       />
     </main>

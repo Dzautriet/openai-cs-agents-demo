@@ -9,11 +9,12 @@ interface ChatProps {
   messages: Message[];
   onSendMessage: (message: string) => void;
   onEditMessage: (messageIndex: number, newContent: string) => void;
+  onRegenerateMessage: (messageIndex: number) => void;
   /** Whether waiting for assistant response */
   isLoading?: boolean;
 }
 
-export function Chat({ messages, onSendMessage, onEditMessage, isLoading }: ChatProps) {
+export function Chat({ messages, onSendMessage, onEditMessage, onRegenerateMessage, isLoading }: ChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputText, setInputText] = useState("");
   const [isComposing, setIsComposing] = useState(false);
@@ -94,6 +95,10 @@ export function Chat({ messages, onSendMessage, onEditMessage, isLoading }: Chat
     [handleEditSend, handleEditCancel]
   );
 
+  const handleRegenerateClick = useCallback((messageIndex: number) => {
+    onRegenerateMessage(messageIndex);
+  }, [onRegenerateMessage]);
+
   return (
     <div className="flex flex-col h-full flex-1 bg-white shadow-sm border border-gray-200 border-t-0 rounded-xl">
       <div className="bg-blue-600 text-white h-12 px-4 flex items-center rounded-t-xl">
@@ -108,7 +113,9 @@ export function Chat({ messages, onSendMessage, onEditMessage, isLoading }: Chat
           
           const isEditing = editingMessageIndex === idx;
           const isUserMessage = msg.role === "user";
+          const isAssistantMessage = msg.role === "assistant";
           const canEdit = isUserMessage;
+          const canRegenerate = isAssistantMessage;
           
           return (
             <div
@@ -160,6 +167,15 @@ export function Chat({ messages, onSendMessage, onEditMessage, isLoading }: Chat
                           title="Edit and resend message"
                         >
                           ✏️
+                        </button>
+                      )}
+                      {canRegenerate && (
+                        <button
+                          onClick={() => handleRegenerateClick(idx)}
+                          className="p-1 bg-green-500 text-white rounded-full text-xs hover:bg-green-600 transition-colors"
+                          title="Regenerate response"
+                        >
+                          🔄
                         </button>
                       )}
                     </div>
