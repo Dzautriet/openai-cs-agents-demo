@@ -22,6 +22,7 @@ export function Chat({ messages, onSendMessage, onEditMessage, onRegenerateMessa
   const [selectedSeat, setSelectedSeat] = useState<string | undefined>(undefined);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
 
   // Auto-scroll to bottom when messages or loading indicator change
   useEffect(() => {
@@ -99,10 +100,12 @@ export function Chat({ messages, onSendMessage, onEditMessage, onRegenerateMessa
     onRegenerateMessage(messageIndex);
   }, [onRegenerateMessage]);
 
-  const handleCopyClick = useCallback(async (content: string) => {
+  const handleCopyClick = useCallback(async (content: string, messageIndex: number) => {
     try {
       await navigator.clipboard.writeText(content);
-      // You could add a toast notification here if desired
+      setCopiedMessageIndex(messageIndex);
+      // Reset the copied state after 2 seconds
+      setTimeout(() => setCopiedMessageIndex(null), 2000);
     } catch (err) {
       console.error('Failed to copy text:', err);
     }
@@ -126,6 +129,7 @@ export function Chat({ messages, onSendMessage, onEditMessage, onRegenerateMessa
           const canEdit = isUserMessage;
           const canRegenerate = isAssistantMessage;
           const canCopy = true; // Both user and assistant messages can be copied
+          const isCopied = copiedMessageIndex === idx;
           
           return (
             <div
@@ -172,20 +176,30 @@ export function Chat({ messages, onSendMessage, onEditMessage, onRegenerateMessa
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 absolute -top-2 -right-2 flex gap-1">
                       {canCopy && (
                         <button
-                          onClick={() => handleCopyClick(msg.content)}
-                          className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs transition-colors border border-gray-200 shadow-sm"
-                          title="Copy message"
+                          onClick={() => handleCopyClick(msg.content, idx)}
+                          className={`p-1.5 rounded-md text-xs transition-all duration-200 border shadow-sm active:scale-95 ${
+                            isCopied
+                              ? "bg-green-100 hover:bg-green-200 text-green-700 border-green-200"
+                              : "bg-gray-100 hover:bg-gray-200 text-gray-600 border-gray-200"
+                          }`}
+                          title={isCopied ? "Copied!" : "Copy message"}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-                            <path d="m4 16c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2"/>
-                          </svg>
+                          {isCopied ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 6 9 17l-5-5"/>
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                              <path d="m4 16c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2"/>
+                            </svg>
+                          )}
                         </button>
                       )}
                       {canEdit && (
                         <button
                           onClick={() => handleEditStart(idx, msg.content)}
-                          className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs transition-colors border border-gray-200 shadow-sm"
+                          className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs transition-all duration-200 border border-gray-200 shadow-sm active:scale-95 active:bg-gray-300"
                           title="Edit and resend message"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -197,7 +211,7 @@ export function Chat({ messages, onSendMessage, onEditMessage, onRegenerateMessa
                       {canRegenerate && (
                         <button
                           onClick={() => handleRegenerateClick(idx)}
-                          className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs transition-colors border border-gray-200 shadow-sm"
+                          className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-md text-xs transition-all duration-200 border border-gray-200 shadow-sm active:scale-95 active:bg-gray-300"
                           title="Regenerate response"
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
