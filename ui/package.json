@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev:next": "npx next dev",
+    "dev:next": "npx next dev -p 3000",
     "dev:server": "cd ../python-backend && poetry run python start.py",
     "dev": "concurrently \"npm run dev:next\" \"npm run dev:server\"",
     "build": "next build",
